@@ -1,7 +1,6 @@
 #include <iostream>
 #include <fstream>
 #include <cstdlib>
-#include <unistd.h>
 #include "encodings.h"
 
 #define RAM_SIZE 4096
@@ -12,7 +11,7 @@ struct letter
     char character;
 } start;
 
-struct tm
+struct turing_machine
 {
     letter tape[20000] = {start};
     tm_word ram[RAM_SIZE];
@@ -24,7 +23,7 @@ struct tm
     int moves = 0;
 };
 
-void draw(tm current_tm, bool halted)
+void draw(turing_machine current_tm, bool halted)
 {
     for (int i = -15; i < 31; i++)
     {
@@ -57,20 +56,22 @@ void draw(tm current_tm, bool halted)
         std::cout << "fail" << std::endl;
 }
 
-void loadProgram(char *fileName, tm &current_tm)
+bool loadProgram(char *fileName, turing_machine &current_tm)
 {
     std::ifstream codeFile;
     codeFile.open(fileName, std::ifstream::binary);
     int i = 0;
-    while (!codeFile.eof())
+    bool success = !codeFile.fail();
+    while (!codeFile.eof() && success)
     {
         codeFile.read(reinterpret_cast<char *>(&current_tm.ram[i]), sizeof(tm_word));
         i++;
     }
     codeFile.close();
+    return success;
 }
 
-bool executeProgram(tm &current_tm)
+bool executeProgram(turing_machine &current_tm)
 {
 
     current_tm.ir.line_num = 0;
@@ -164,44 +165,68 @@ bool executeProgram(tm &current_tm)
     return halt;
 }
 
+int getFileOfType(int argc, char *argv[], std::string type)
+{
+    int i = 0;
+    int result = -1;
+    while (i < argc && result == -1)
+    {
+        std::string argument = argv[i];
+        if (argument.length() >= type.length() && argument.substr(argument.length() - type.length()).compare(type) == 0)
+        {
+            result = i;
+        }
+        i++;
+    }
+    return result;
+}
+
 int main(int argc, char *argv[])
 {
-    if (argc > 2)
+    int binIndex = getFileOfType(argc, argv, ".bin");
+    int tapeIndex = getFileOfType(argc, argv, ".tape");
+    if (argc > 2 && binIndex > 0 && tapeIndex > 0)
     {
-        tm default_tm;
-        loadProgram(argv[1], default_tm);
-
-        tm current_tm = default_tm;
-
+        turing_machine default_tm;
+        turing_machine current_tm = default_tm;
         std::ifstream tapeFile;
-        tapeFile.open(argv[2]);
-        std::string line;
+        tapeFile.open(argv[tapeIndex]);
 
-        bool success;
-
-        int i = 0;
-        while (!tapeFile.eof())
+        if (loadProgram(argv[binIndex], default_tm) && !tapeFile.fail())
         {
-            getline(tapeFile, line);
 
-            for (int z = 0; z < line.length(); z++)
+            std::string line;
+
+            bool success;
+
+            int i = 0;
+            while (!tapeFile.eof())
             {
-                int location = 10000 + z;
-                current_tm.tape[location].blank = false;
-                current_tm.tape[location].character = line[z];
+                getline(tapeFile, line);
+
+                for (int z = 0; z < line.length(); z++)
+                {
+                    int location = 10000 + z;
+                    current_tm.tape[location].blank = false;
+                    current_tm.tape[location].character = line[z];
+                }
+                i++;
+
+                success = executeProgram(current_tm);
+                draw(current_tm, success);
+                current_tm = default_tm;
             }
-            i++;
 
-            success = executeProgram(current_tm);
-            draw(current_tm, success);
-            current_tm = default_tm;
+            tapeFile.close();
         }
-
-        tapeFile.close();
+        else
+        {
+            std::cout << "please provide the program with the following.\n1.\ta valid *.bin\n2.\ta valid *.tape" << std::endl;
+        }
     }
     else
     {
-        std::cout << "please provide the program with the following.\n1.\t*.bin\n2.\t*.tape" << std::endl;
+        std::cout << "invalid arguments" << std::endl;
     }
 
     return 0;
