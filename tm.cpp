@@ -1,82 +1,75 @@
 #include <iostream>
 #include <fstream>
+#include <deque>
+#include <vector>
 #include <cstdlib>
 #include "encodings.h"
 
-#define RAM_SIZE 4096
+#define ADDR_BITS 12
+#define WORD_CNT (1 << ADDR_BITS)
+#define BIN_SIZE (WORD_CNT * sizeof(tm_word))
+
+// annoyingly global testing variables
+int moves;
+int total_moves;
+int total_instructions;
+int bin_size;
 
 struct letter
 {
-    bool blank = true;
-    char character;
-} start;
+    bool is_blank = true;
+    char letter = ' ';
+};
+
+typedef letter letter;
 
 struct turing_machine
 {
-    letter tape[20000] = {start};
-    tm_word ram[RAM_SIZE];
+    std::deque<letter> tape = {};
+    tm_encoding pc = {0};
+    tm_encoding ram[WORD_CNT] = {{0}};
     tm_instruction ir;
-    tm_word pc;
-    bool eq = false;
-    bool alpha[256] = {false};
-    int headPos = 10000;
-    int moves = 0;
-};
+    bool alphabet[256] = {false};
+    bool equals_flag = false;
+    int headPos = 0;
+} base_tm;
 
-void draw(turing_machine current_tm, bool halted)
+// need a function to draw
+void draw_tape(turing_machine current_tm, bool halted)
 {
-    for (int i = -15; i < 31; i++)
+    // remove only the leading blanks
+    while (current_tm.tape[0].is_blank && current_tm.tape.size() > 0)
     {
-        std::cout << '|';
-        if (current_tm.tape[current_tm.headPos + i].blank)
-        {
-            std::cout << ' ';
-        }
-        else
-        {
-            std::cout << current_tm.tape[current_tm.headPos + i].character;
-        }
+        current_tm.tape.erase(current_tm.tape.begin());
+        current_tm.headPos--;
     }
-    std::cout << '|' << std::endl;
-    for (int i = -15; i < 31; i++)
+    // draw stuff here
+    for (int i = 0; i < current_tm.tape.size(); i++)
     {
-        if (i != 0)
-            std::cout << "  ";
-        else
-            std::cout << " ^";
+        std::cout << (current_tm.tape[i].is_blank ? ' ' : current_tm.tape[i].letter);
     }
-    std::cout << std::endl
-              << "PC: " << current_tm.pc.u << "\tMoves: " << current_tm.moves << std::endl;
-    std::cout << "IR: " << current_tm.ir.encoding.word.u << std::endl;
-    std::cout << "EQ: " << current_tm.eq << std::endl;
-    std::cout << "instructions processed: " << current_tm.ir.line_num << std::endl;
-    if (halted)
-        std::cout << "halt" << std::endl;
-    else
-        std::cout << "fail" << std::endl;
+    std::cout << std::endl;
+    for (int i = 0; i < current_tm.headPos; i++)
+    {
+        std::cout << ' ';
+    }
+    std::cout << '^' << std::endl;
+    std::cout << (halted ? "halted " : "failed ") << "in " << current_tm.ir.line_num << " instructions and " << moves << " moves."
+              << "\n\n"
+              << std::endl;
 }
 
-bool loadProgram(char *fileName, turing_machine &current_tm)
+void draw_total()
 {
-    std::ifstream codeFile;
-    codeFile.open(fileName, std::ifstream::binary);
-    int i = 0;
-    bool success = !codeFile.fail();
-    while (!codeFile.eof() && success)
-    {
-        codeFile.read(reinterpret_cast<char *>(&current_tm.ram[i]), sizeof(tm_word));
-        i++;
-    }
-    codeFile.close();
-    return success;
+    std::cout << "The size of the program was " << bin_size << " bits executed with a total of " << total_moves << " moves and " << total_instructions << " instructions." << std::endl;
 }
 
+// function to execute loaded program
 bool executeProgram(turing_machine &current_tm)
 {
 
     current_tm.ir.line_num = 0;
-    current_tm.pc.u = 0;
-    current_tm.ir.encoding.word = current_tm.ram[current_tm.pc.u];
+    current_tm.pc = {0};
 
     bool halt = false;
     bool fail = false;
@@ -84,60 +77,54 @@ bool executeProgram(turing_machine &current_tm)
     while (!(halt || fail))
     {
         // Fetch
-        current_tm.ir.encoding.word = current_tm.ram[current_tm.pc.u];
-        current_tm.pc.u++;
+        current_tm.ir.encoding = current_tm.ram[current_tm.pc.word.u];
+        current_tm.pc.word.u++;
+
         // Decode + Execute
         switch (current_tm.ir.encoding.generic.opcode)
         {
         case TM_OPCODE_ALPHA:
-            current_tm.alpha[current_tm.ir.encoding.alpha.letter] = true;
+            current_tm.alphabet[current_tm.ir.encoding.alpha.letter] = true;
             break;
         case TM_OPCODE_BRA:
-            current_tm.pc.u = current_tm.ir.encoding.bra.addr;
+            current_tm.pc.word.u = current_tm.ir.encoding.bra.addr;
             break;
         case TM_OPCODE_BRAC:
-            if (current_tm.eq && current_tm.ir.encoding.brac.eq)
+            if (current_tm.equals_flag && current_tm.ir.encoding.brac.eq)
             {
-                current_tm.pc.u = current_tm.ir.encoding.brac.addr;
+                current_tm.pc.word.u = current_tm.ir.encoding.brac.addr;
             }
-            else if (!current_tm.eq && !current_tm.ir.encoding.brac.eq)
+            else if (!current_tm.equals_flag && !current_tm.ir.encoding.brac.eq)
             {
-                current_tm.pc.u = current_tm.ir.encoding.brac.addr;
+                current_tm.pc.word.u = current_tm.ir.encoding.brac.addr;
             }
             break;
         case TM_OPCODE_CMP:
-            if (current_tm.ir.encoding.cmp.oring)
+            if (!current_tm.tape[current_tm.headPos].is_blank && !current_tm.alphabet[current_tm.tape[current_tm.headPos].letter])
             {
-                if (current_tm.ir.encoding.cmp.blank)
-                {
-                    current_tm.eq = current_tm.eq || current_tm.tape[current_tm.headPos].blank;
-                }
-                else
-                {
-                    current_tm.eq = current_tm.eq || (!(current_tm.tape[current_tm.headPos].blank) && (current_tm.ir.encoding.cmp.letter == current_tm.tape[current_tm.headPos].character));
-                }
+                fail = true;
             }
-            else
+            else if (!(current_tm.ir.encoding.cmp.oring && current_tm.equals_flag))
             {
                 if (current_tm.ir.encoding.cmp.blank)
                 {
-                    current_tm.eq = current_tm.tape[current_tm.headPos].blank;
+                    current_tm.equals_flag = current_tm.tape[current_tm.headPos].is_blank;
                 }
                 else
                 {
-                    current_tm.eq = (!(current_tm.tape[current_tm.headPos].blank) && (current_tm.ir.encoding.cmp.letter == current_tm.tape[current_tm.headPos].character));
+                    current_tm.equals_flag = (!(current_tm.tape[current_tm.headPos].is_blank) && (current_tm.ir.encoding.cmp.letter == current_tm.tape[current_tm.headPos].letter));
                 }
             }
             break;
         case TM_OPCODE_DRAW:
             if (current_tm.ir.encoding.draw.blank)
             {
-                current_tm.tape[current_tm.headPos].blank = true;
+                current_tm.tape[current_tm.headPos].is_blank = true;
             }
             else
             {
-                current_tm.tape[current_tm.headPos].blank = false;
-                current_tm.tape[current_tm.headPos].character = current_tm.ir.encoding.draw.letter;
+                current_tm.tape[current_tm.headPos].is_blank = false;
+                current_tm.tape[current_tm.headPos].letter = current_tm.ir.encoding.draw.letter;
             }
             break;
         case TM_OPCODE_END:
@@ -151,20 +138,61 @@ bool executeProgram(turing_machine &current_tm)
             }
             break;
         case TM_OPCODE_MOVE:
-            current_tm.moves++;
+            moves++;
             if (current_tm.ir.encoding.move.left)
-                current_tm.headPos--;
+                if (current_tm.headPos == 0)
+                    current_tm.tape.push_front(letter{true, 'a'});
+                else
+                    current_tm.headPos--;
             else
+            {
                 current_tm.headPos++;
+                if (current_tm.headPos == current_tm.tape.size())
+                    current_tm.tape.push_back(letter{true, 'a'});
+            }
             break;
         default:
             break;
         }
         current_tm.ir.line_num++;
     }
+    total_instructions += current_tm.ir.line_num;
+    total_moves += moves;
+    draw_tape(current_tm, halt);
+    moves = 0;
     return halt;
 }
 
+// function to load program
+bool loadProgram(char *fileName, turing_machine &current_tm)
+{
+    // open file
+    std::ifstream codeFile;
+    codeFile.open(fileName, std::ifstream::binary);
+
+    // check to see if file opened successfully
+    bool is_opened = !codeFile.fail();
+
+    // check to see that it is the apropriate size
+    codeFile.seekg(0, std::ifstream::end);
+    bin_size = codeFile.tellg() * 8;
+    is_opened = is_opened && (bin_size <= BIN_SIZE);
+    codeFile.clear();
+    codeFile.seekg(0, std::ifstream::beg);
+
+    // load program into ram
+    int i = 0;
+    tm_encoding buffer;
+    while (!codeFile.eof() && is_opened)
+    {
+        codeFile.read(reinterpret_cast<char *>(&current_tm.ram[i]), sizeof(tm_word));
+        i++;
+    }
+    codeFile.close();
+    return is_opened;
+}
+
+// function to get the index in args of a file with the given extension
 int getFileOfType(int argc, char *argv[], std::string type)
 {
     int i = 0;
@@ -181,53 +209,68 @@ int getFileOfType(int argc, char *argv[], std::string type)
     return result;
 }
 
+// main sets everything up and loads a new tm and tape
 int main(int argc, char *argv[])
 {
+    int main_return = 0;
+
+    // variables to store the found indexes in argv or the bin and tape files
     int binIndex = getFileOfType(argc, argv, ".bin");
     int tapeIndex = getFileOfType(argc, argv, ".tape");
+
+    // if a sufficient amount of arguments and a bin and tape file where found
+    // for now does not check for too many bin or tape files but ignores the order
     if (argc > 2 && binIndex > 0 && tapeIndex > 0)
     {
-        turing_machine default_tm;
-        turing_machine current_tm = default_tm;
+
+        // alter the base_tm to have the program loaded into it
+        bool program_loaded = loadProgram(argv[binIndex], base_tm);
+
+        // open tape file and check success of doing so
         std::ifstream tapeFile;
         tapeFile.open(argv[tapeIndex]);
-
-        if (loadProgram(argv[binIndex], default_tm) && !tapeFile.fail())
+        bool is_opened = !tapeFile.fail();
+        // itterate through tape file and add lines onto a vector of tapes to run
+        if (is_opened && program_loaded)
         {
-
+            std::vector<std::string> tapes;
             std::string line;
-
-            bool success;
-
-            int i = 0;
             while (!tapeFile.eof())
             {
                 getline(tapeFile, line);
-
-                for (int z = 0; z < line.length(); z++)
-                {
-                    int location = 10000 + z;
-                    current_tm.tape[location].blank = false;
-                    current_tm.tape[location].character = line[z];
-                }
-                i++;
-
-                success = executeProgram(current_tm);
-                draw(current_tm, success);
-                current_tm = default_tm;
+                tapes.push_back(line);
             }
-
             tapeFile.close();
+
+            // load and execute tapes
+            for (int i = 0; i < tapes.size(); i++)
+            {
+                // set current_tm to be a new turing machine with loaded program
+                turing_machine current_tm = base_tm;
+
+                // compensate for empty lines instead of just having a null character ascii 0 have
+                // just a blank letter
+                if ((int)tapes[i][0] == 0)
+                {
+                    current_tm.tape.push_back({true, tapes[i][0]});
+                }
+                else
+                {
+                    for (int x = 0; x < tapes[i].size(); x++)
+                    {
+                        current_tm.tape.push_back({false, tapes[i][x]});
+                    }
+                }
+
+                executeProgram(current_tm);
+            }
+            draw_total();
         }
         else
         {
-            std::cout << "please provide the program with the following.\n1.\ta valid *.bin\n2.\ta valid *.tape" << std::endl;
+            std::cout << "failed to load one of the files";
         }
-    }
-    else
-    {
-        std::cout << "invalid arguments" << std::endl;
-    }
 
-    return 0;
+        return main_return;
+    }
 }
