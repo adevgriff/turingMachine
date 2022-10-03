@@ -3,6 +3,7 @@
 #include <deque>
 #include <vector>
 #include <cstdlib>
+#include <string>
 #include "encodings.h"
 
 #define ADDR_BITS 12
@@ -38,7 +39,7 @@ struct turing_machine
 void draw_tape(turing_machine current_tm, bool halted)
 {
     // remove only the leading blanks
-    while (current_tm.tape[0].is_blank && current_tm.tape.size() > 0)
+    while (current_tm.tape[0].is_blank && current_tm.tape.size() > 0 && current_tm.headPos > 0)
     {
         current_tm.tape.erase(current_tm.tape.begin());
         current_tm.headPos--;
@@ -57,6 +58,22 @@ void draw_tape(turing_machine current_tm, bool halted)
     std::cout << (halted ? "halted " : "failed ") << "in " << current_tm.ir.line_num << " instructions and " << moves << " moves."
               << "\n\n"
               << std::endl;
+}
+
+void animate(turing_machine current_tm)
+{
+    // draw stuff here
+    for (int i = 0; i < current_tm.tape.size(); i++)
+    {
+        std::cout << (current_tm.tape[i].is_blank ? ' ' : current_tm.tape[i].letter);
+    }
+    std::cout << std::endl;
+    for (int i = 0; i < current_tm.headPos; i++)
+    {
+        std::cout << ' ';
+    }
+    std::cout << '^' << std::endl;
+    std::cout << "instruction " << std::hex << current_tm.ir.encoding.word.u << std::endl;
 }
 
 void draw_total()
