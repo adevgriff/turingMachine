@@ -16,6 +16,8 @@ int total_moves;
 int total_instructions;
 int bin_size;
 
+bool animating = false;
+
 struct letter
 {
     bool is_blank = true;
@@ -172,6 +174,11 @@ bool executeProgram(turing_machine &current_tm)
             break;
         }
         current_tm.ir.line_num++;
+        if (animating)
+        {
+            animate(current_tm);
+            // needs a delay function but had trouble finding one that I am sure is platform independent
+        }
     }
     total_instructions += current_tm.ir.line_num;
     total_moves += moves;
@@ -226,6 +233,19 @@ int getFileOfType(int argc, char *argv[], std::string type)
     return result;
 }
 
+bool getFlag(int argc, char *argv[], std::string flag)
+{
+    bool flagResult = false;
+    for (int i = 0; i < argc; i++)
+    {
+        if (flag.compare(argv[i]) == 0)
+        {
+            flagResult = true;
+        }
+    }
+    return flagResult;
+}
+
 // main sets everything up and loads a new tm and tape
 int main(int argc, char *argv[])
 {
@@ -234,6 +254,9 @@ int main(int argc, char *argv[])
     // variables to store the found indexes in argv or the bin and tape files
     int binIndex = getFileOfType(argc, argv, ".bin");
     int tapeIndex = getFileOfType(argc, argv, ".tape");
+
+    // check optional flags
+    animating = getFlag(argc, argv, "-a");
 
     // if a sufficient amount of arguments and a bin and tape file where found
     // for now does not check for too many bin or tape files but ignores the order
