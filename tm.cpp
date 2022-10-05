@@ -10,14 +10,6 @@
 #define WORD_CNT (1 << ADDR_BITS)
 #define BIN_SIZE (WORD_CNT * sizeof(tm_word))
 
-// annoyingly global testing variables
-int moves;
-int total_moves;
-int total_instructions;
-int bin_size;
-
-bool animating = false;
-
 struct letter
 {
     bool is_blank = true;
@@ -26,6 +18,7 @@ struct letter
 
 typedef letter letter;
 
+// makes it simpler to set up new turing machines and pass them around
 struct turing_machine
 {
     std::deque<letter> tape = {};
@@ -35,10 +28,10 @@ struct turing_machine
     bool alphabet[256] = {false};
     bool equals_flag = false;
     int headPos = 0;
-} base_tm;
+};
 
 // need a function to draw
-void draw_tape(turing_machine current_tm, bool halted)
+void draw_tape(turing_machine current_tm, bool halted, int moves)
 {
     // remove only the leading blanks
     while (current_tm.tape[0].is_blank && current_tm.tape.size() > 0 && current_tm.headPos > 0)
@@ -78,18 +71,17 @@ void animate(turing_machine current_tm)
     std::cout << "instruction " << std::hex << current_tm.ir.encoding.word.u << std::endl;
 }
 
-void draw_total()
+void draw_total(int bin_size, int total_moves, int total_instructions)
 {
     std::cout << "The size of the program was " << bin_size << " bits executed with a total of " << total_moves << " moves and " << total_instructions << " instructions." << std::endl;
 }
 
 // function to execute loaded program
-bool executeProgram(turing_machine &current_tm)
+bool executeProgram(turing_machine &current_tm, int &moves, int &total_moves, int &total_instructions, bool animating)
 {
 
     current_tm.ir.line_num = 0;
     current_tm.pc = {0};
-
     bool halt = false;
     bool fail = false;
 
@@ -182,13 +174,13 @@ bool executeProgram(turing_machine &current_tm)
     }
     total_instructions += current_tm.ir.line_num;
     total_moves += moves;
-    draw_tape(current_tm, halt);
+    draw_tape(current_tm, halt, moves);
     moves = 0;
     return halt;
 }
 
 // function to load program
-bool loadProgram(char *fileName, turing_machine &current_tm)
+bool loadProgram(char *fileName, turing_machine &current_tm, int &bin_size)
 {
     // open file
     std::ifstream codeFile;
@@ -233,6 +225,7 @@ int getFileOfType(int argc, char *argv[], std::string type)
     return result;
 }
 
+// checks to see if a flag provided is in argv at the moment just used to animate when provided the -a flag
 bool getFlag(int argc, char *argv[], std::string flag)
 {
     bool flagResult = false;
@@ -249,7 +242,14 @@ bool getFlag(int argc, char *argv[], std::string flag)
 // main sets everything up and loads a new tm and tape
 int main(int argc, char *argv[])
 {
-    int main_return = 0;
+    // variables used to keep track of how a program runs on the turing machine
+    int moves = 0;
+    int total_moves = 0;
+    int total_instructions = 0;
+    int bin_size = 0;
+
+    // variables used to keep track of flags present at the moment only animation flag -a not working fully needs delay
+    bool animating = false;
 
     // variables to store the found indexes in argv or the bin and tape files
     int binIndex = getFileOfType(argc, argv, ".bin");
@@ -262,14 +262,18 @@ int main(int argc, char *argv[])
     // for now does not check for too many bin or tape files but ignores the order
     if (argc > 2 && binIndex > 0 && tapeIndex > 0)
     {
+        // setup turing machines
+        turing_machine current_tm;
+        turing_machine base_tm;
 
         // alter the base_tm to have the program loaded into it
-        bool program_loaded = loadProgram(argv[binIndex], base_tm);
+        bool program_loaded = loadProgram(argv[binIndex], base_tm, bin_size);
 
         // open tape file and check success of doing so
         std::ifstream tapeFile;
         tapeFile.open(argv[tapeIndex]);
         bool is_opened = !tapeFile.fail();
+
         // itterate through tape file and add lines onto a vector of tapes to run
         if (is_opened && program_loaded)
         {
@@ -286,7 +290,7 @@ int main(int argc, char *argv[])
             for (int i = 0; i < tapes.size(); i++)
             {
                 // set current_tm to be a new turing machine with loaded program
-                turing_machine current_tm = base_tm;
+                current_tm = base_tm;
 
                 // compensate for empty lines instead of just having a null character ascii 0 have
                 // just a blank letter
@@ -302,15 +306,14 @@ int main(int argc, char *argv[])
                     }
                 }
 
-                executeProgram(current_tm);
+                executeProgram(current_tm, moves, total_moves, total_instructions, animating);
             }
-            draw_total();
+            draw_total(bin_size, total_moves, total_instructions);
         }
         else
         {
             std::cout << "failed to load one of the files";
         }
-
-        return main_return;
     }
+    return 0;
 }
