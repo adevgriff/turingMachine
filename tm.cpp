@@ -1,3 +1,8 @@
+/*
+ * Name        : tm.cpp
+ * Author      : Aero Griffin
+ */
+
 #include <iostream>
 #include <fstream>
 #include <deque>
@@ -22,8 +27,8 @@ typedef letter letter;
 struct turing_machine
 {
     std::deque<letter> tape = {};
-    tm_encoding pc = {0};
-    tm_encoding ram[WORD_CNT] = {{0}};
+    tm_encoding pc;
+    tm_encoding ram[WORD_CNT];
     tm_instruction ir;
     bool alphabet[256] = {false};
     bool equals_flag = false;
@@ -40,7 +45,7 @@ void draw_tape(turing_machine current_tm, bool halted, int moves)
         current_tm.headPos--;
     }
     // draw stuff here
-    for (int i = 0; i < current_tm.tape.size(); i++)
+    for (long unsigned int i = 0; i < current_tm.tape.size(); i++)
     {
         std::cout << (current_tm.tape[i].is_blank ? ' ' : current_tm.tape[i].letter);
     }
@@ -58,7 +63,7 @@ void draw_tape(turing_machine current_tm, bool halted, int moves)
 void animate(turing_machine current_tm)
 {
     // draw stuff here
-    for (int i = 0; i < current_tm.tape.size(); i++)
+    for (long unsigned int i = 0; i < current_tm.tape.size(); i++)
     {
         std::cout << (current_tm.tape[i].is_blank ? ' ' : current_tm.tape[i].letter);
     }
@@ -81,7 +86,7 @@ bool executeProgram(turing_machine &current_tm, int &moves, int &total_moves, in
 {
 
     current_tm.ir.line_num = 0;
-    current_tm.pc = {0};
+    current_tm.pc.word.u = 0;
     bool halt = false;
     bool fail = false;
 
@@ -111,7 +116,7 @@ bool executeProgram(turing_machine &current_tm, int &moves, int &total_moves, in
             }
             break;
         case TM_OPCODE_CMP:
-            if (!current_tm.tape[current_tm.headPos].is_blank && !current_tm.alphabet[current_tm.tape[current_tm.headPos].letter])
+            if (!current_tm.tape[current_tm.headPos].is_blank && !current_tm.alphabet[(uint8_t)current_tm.tape[current_tm.headPos].letter])
             {
                 fail = true;
             }
@@ -158,7 +163,7 @@ bool executeProgram(turing_machine &current_tm, int &moves, int &total_moves, in
             else
             {
                 current_tm.headPos++;
-                if (current_tm.headPos == current_tm.tape.size())
+                if ((long unsigned int)current_tm.headPos == current_tm.tape.size())
                     current_tm.tape.push_back(letter{true, 'a'});
             }
             break;
@@ -192,16 +197,14 @@ bool loadProgram(char *fileName, turing_machine &current_tm, int &bin_size)
     // check to see that it is the apropriate size
     codeFile.seekg(0, std::ifstream::end);
     bin_size = codeFile.tellg() * 8;
-    is_opened = is_opened && (bin_size <= BIN_SIZE);
+    is_opened = is_opened && ((long unsigned int)bin_size <= BIN_SIZE);
     codeFile.clear();
     codeFile.seekg(0, std::ifstream::beg);
 
     // load program into ram
     int i = 0;
-    tm_encoding buffer;
-    while (!codeFile.eof() && is_opened)
+    while (codeFile.read(reinterpret_cast<char *>(&current_tm.ram[i]), sizeof(tm_word)) && is_opened)
     {
-        codeFile.read(reinterpret_cast<char *>(&current_tm.ram[i]), sizeof(tm_word));
         i++;
     }
     codeFile.close();
@@ -275,34 +278,41 @@ int main(int argc, char *argv[])
         bool is_opened = !tapeFile.fail();
 
         // itterate through tape file and add lines onto a vector of tapes to run
-        if (is_opened && program_loaded)
+        if (is_opened && program_loaded) // this can return on fail return 1
         {
             std::vector<std::string> tapes;
             std::string line;
-            while (!tapeFile.eof())
+            while (getline(tapeFile, line))
             {
-                getline(tapeFile, line);
                 tapes.push_back(line);
             }
             tapeFile.close();
 
             // load and execute tapes
-            for (int i = 0; i < tapes.size(); i++)
+            for (long unsigned int i = 0; i < tapes.size(); i++)
             {
                 // set current_tm to be a new turing machine with loaded program
                 current_tm = base_tm;
 
                 // compensate for empty lines instead of just having a null character ascii 0 have
-                // just a blank letter
-                if ((int)tapes[i][0] == 0)
+                // just a blank letter previously compensated null dont know where null came from now
+                // looks to see if line starts with \r carrage return a windows thing or just a \n new line
+                if ((int)tapes[i].empty())
                 {
-                    current_tm.tape.push_back({true, tapes[i][0]});
+                    current_tm.tape.push_back({true, '\0'});
                 }
                 else
                 {
-                    for (int x = 0; x < tapes[i].size(); x++)
+                    for (long unsigned int x = 0; x < tapes[i].size(); x++)
                     {
-                        current_tm.tape.push_back({false, tapes[i][x]});
+                        if (x == tapes[i].size() - 1 && (tapes[i][x] == '\n' || tapes[i][x] == '\r'))
+                        {
+                            current_tm.tape.push_back({true, tapes[i][x]});
+                        }
+                        else
+                        {
+                            current_tm.tape.push_back({false, tapes[i][x]});
+                        }
                     }
                 }
 
